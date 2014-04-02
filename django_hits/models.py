@@ -11,33 +11,40 @@ from django.db.models import signals
 
 
 class HitManager(models.Manager):
-    def get_for(self, obj):
+    def get_for(self, obj, bucket=None):
         from django.db import backend
+        if bucket is None:
+            bucket_kwargs = {'bucket__isnull': True}
+        else:
+            bucket_kwargs = {'bucket': bucket}
         if isinstance(obj, models.Model):
             content_type = ContentType.objects.get_for_model(obj.__class__)
             object_pk = getattr(obj, obj._meta.pk.column)
             try:
-                return self.get_or_create(content_type=content_type, object_pk=object_pk)[0]
+                return self.get_or_create(content_type=content_type, object_pk=object_pk, **bucket_kwargs)[0]
             except backend.IntegrityError:  # catch race condition
-                return self.get(content_type=content_type, object_pk=object_pk)
+                return self.get(content_type=content_type, object_pk=object_pk, **bucket_kwargs)
         elif isinstance(obj, (str, unicode)):
             try:
-                return self.get_or_create(content_type__isnull=True, object_pk=obj)[0]
+                return self.get_or_create(content_type__isnull=True, object_pk=obj, **bucket_kwargs)[0]
             except backend.IntegrityError: # catch race condition
-                return self.get(content_type__isnull=True, object_pk=obj)
+                return self.get(content_type__isnull=True, object_pk=obj, **bucket_kwargs)
         else:
             raise Exception("Don't know what to do with this obj!?")
 
-    def hit(self, obj, user, ip):
-        hit = self.get_for(obj)
+    def hit(self, obj, user, ip, bucket=None):
+        hit = self.get_for(obj, bucket=bucket)
         hit.hit(user, ip)
         return hit
 
 
 class Hit(models.Model):
     content_type = models.ForeignKey(ContentType, null=True)
-    object_pk = models.CharField(max_length=255)  # TextField not possible, because unique_together is needed, must be enough
+    object_pk = models.CharField(max_length=50)  # TextField not possible, because unique_together is needed, must be enough
     content_object = generic.GenericForeignKey(ct_field="content_type", fk_field="object_pk")
+
+    bucket = models.CharField(max_length=50, blank=True, null=True)  # Each object may have multiple buckets hits get counted in
+
     views = models.PositiveIntegerField(default=0)  # page hits/views
     visits = models.PositiveIntegerField(default=0)  # unique visits
 
@@ -83,7 +90,7 @@ class Hit(models.Model):
             l.delete()
 
     class Meta:
-        unique_together = (('content_type', 'object_pk'),)
+        unique_together = (('content_type', 'object_pk', 'bucket'),)
 
 
 class HitLog(models.Model):
