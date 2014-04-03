@@ -102,3 +102,16 @@ class HitLog(models.Model):
     class Meta:
         unique_together = (('hit', 'user', 'ip'),)
 
+
+class HitHistory(models.Model):
+    hit = models.ForeignKey(Hit, related_name='history')
+    when = models.DateTimeField(default=datetime.now)
+
+    views = models.PositiveIntegerField(default=0)
+    visits = models.PositiveIntegerField(default=0)
+
+    views_change = models.PositiveIntegerField(default=0)
+    visits_change = models.PositiveIntegerField(default=0)
+
+
+
