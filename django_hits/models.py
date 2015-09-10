@@ -1,18 +1,14 @@
 # -*- coding: utf-8 -*-
-from django.contrib.contenttypes.models import ContentType
 from django.db import models
-from django.contrib.auth.models import User
 from django.contrib.contenttypes import generic
 from django.contrib.contenttypes.models import ContentType
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from datetime import datetime, timedelta
-
-from django.db.models import signals
+from django.conf import settings
 
 
 class HitManager(models.Manager):
     def get_for(self, obj, bucket=None):
-        from django.db import backend
         if bucket is None:
             bucket_kwargs = {'bucket__isnull': True}
         else:
@@ -22,12 +18,12 @@ class HitManager(models.Manager):
             object_pk = getattr(obj, obj._meta.pk.column)
             try:
                 return self.get_or_create(content_type=content_type, object_pk=object_pk, **bucket_kwargs)[0]
-            except backend.IntegrityError:  # catch race condition
+            except IntegrityError:  # catch race condition
                 return self.get(content_type=content_type, object_pk=object_pk, **bucket_kwargs)
         elif isinstance(obj, (str, unicode)):
             try:
                 return self.get_or_create(content_type__isnull=True, object_pk=obj, **bucket_kwargs)[0]
-            except backend.IntegrityError: # catch race condition
+            except IntegrityError:  # catch race condition
                 return self.get(content_type__isnull=True, object_pk=obj, **bucket_kwargs)
         else:
             raise Exception("Don't know what to do with this obj!?")
@@ -50,29 +46,26 @@ class Hit(models.Model):
 
     objects = HitManager()
 
-    # TODO: Transaction-Management needed?
-    @transaction.commit_manually
     def hit(self, user, ip):
-        from django.db import backend
-        if self.has_hit_from(user, ip):
-            self.update_hit_from(user, ip)
-            Hit.objects.filter(pk=self.pk).update(views=models.F('views') + 1)
-            self.views += 1
-            transaction.commit()
-            return True
         try:
-            self.log.create(user=user, ip=ip)
-        except backend.IntegrityError: # catch race condition
+            with transaction.atomic():
+                if self.has_hit_from(user, ip):
+                    self.update_hit_from(user, ip)
+                    Hit.objects.filter(pk=self.pk).update(views=models.F('views') + 1)
+                    self.views += 1
+                    return True
+                else:
+                    self.log.create(user=user, ip=ip)
+                    Hit.objects.filter(pk=self.pk).update(views=models.F('views') + 1, visits=models.F('visits') + 1)
+                    self.views += 1
+                    self.visits += 1
+                    return True
+        except IntegrityError:
+            # CATCH RACE CONDITION
             # log-extry was already created
             # happens when users double-click or reload to fast
             # (we ignore this)
-            transaction.rollback()
             return False
-        Hit.objects.filter(pk=self.pk).update(views=models.F('views') + 1, visits=models.F('visits') + 1)
-        self.views += 1
-        self.visits += 1
-        transaction.commit()
-        return True
 
     def has_hit_from(self, user, ip):
         self.clear_log()
@@ -95,7 +88,7 @@ class Hit(models.Model):
 
 class HitLog(models.Model):
     hit = models.ForeignKey(Hit, related_name='log')
-    user = models.ForeignKey(User, related_name='hits_log', null=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name='hits_log', null=True)
     ip = models.GenericIPAddressField(null=True)
     when = models.DateTimeField(default=datetime.now)
 

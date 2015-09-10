@@ -93,6 +93,7 @@ def get_hit(parser, token):
         raise template.TemplateSyntaxError, "%s tag requires some context name to write hit into ('as')" % tag_name
     return HitNode(context_var_name, as_var_name, bucket_var_name, False)
 
+
 @register.tag
 def count_hit(parser, token):
     '''

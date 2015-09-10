@@ -16,7 +16,7 @@ setup(
         'django_hits.management.commands',
     ],
     install_requires = [
-        'Django >=1.3',
+        'Django >=1.6',
     ],
     classifiers=[
         'Development Status :: 4 - Beta',
