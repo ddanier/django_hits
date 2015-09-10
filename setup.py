@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name = "django_hits",
-    version = "0.3.0",
+    version = "0.4.0",
     description = 'Count visitors/views for your page',
     author = 'David Danier',
     author_email = 'david.danier@team23.de',
